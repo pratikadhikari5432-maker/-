@@ -1,0 +1,6 @@
+{
+  "name": "EasyBill",
+  "description": "EasyBill: A powerful business tool suite featuring Inventory Management, Invoice Generation, Logo Maker, AI Ad Copy Generator, and WhatsApp Auto Reply Planner.",
+  "requestFramePermissions": ["camera"],
+  "majorCapabilities": []
+}

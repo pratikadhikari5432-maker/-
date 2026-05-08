@@ -1,0 +1,37 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    
+    function isStaffOfOwner(ownerId) {
+      // Storage rules can't easily access Firestore without get() which is not always available or cost effective
+      // However, we can use custom claims in the auth token if we had them.
+      // Since we don't have secondary auth checks easily in storage here without firestore.get,
+      // we'll rely on the folder structure and auth UID.
+      // But we just enabled Custom Tokens with role and ownerId claims!
+      return request.auth.token.ownerId == ownerId;
+    }
+
+    match /invoices/{userId}/{allPaths=**} {
+      allow read: if isSignedIn() && (request.auth.uid == userId || request.auth.token.ownerId == userId);
+      allow write: if isSignedIn() && (request.auth.uid == userId || request.auth.token.ownerId == userId);
+    }
+    
+    match /logos/{userId}/{allPaths=**} {
+      allow read: if isSignedIn() && (request.auth.uid == userId || request.auth.token.ownerId == userId);
+      allow write: if isSignedIn() && (request.auth.uid == userId || request.auth.token.ownerId == userId);
+    }
+    
+    match /shops/{userId}/{allPaths=**} {
+      allow read: if isSignedIn() && (request.auth.uid == userId || request.auth.token.ownerId == userId);
+      allow write: if isSignedIn() && (request.auth.uid == userId || request.auth.token.ownerId == userId);
+    }
+    
+    match /users/{userId}/{allPaths=**} {
+      allow read, write: if isSignedIn() && (request.auth.uid == userId || request.auth.token.ownerId == userId);
+    }
+  }
+}

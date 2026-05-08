@@ -1,0 +1,182 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // --- Helpers ---
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    // Role helpers
+    function isAdminEmail() {
+      return isSignedIn() && (
+        request.auth.token.email == 'prodyutadhikari99@gmail.com' || 
+        request.auth.token.email == 'pratikadhikari5432@gmail.com'
+      );
+    }
+
+    function isAdmin() {
+      return isAdminEmail() || (
+        isSignedIn() && 
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin'
+      );
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isStaffOfOwner(ownerId) {
+      // Look up if the current auth UID is a staff member for this business owner
+      return isSignedIn() && (
+        exists(/databases/$(database)/documents/staff_accounts/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/staff_accounts/$(request.auth.uid)).data.userId == ownerId
+      );
+    }
+
+    // Generic doc helpers
+    function belongsToUser() {
+      return isSignedIn() && (existing().userId == request.auth.uid || isStaffOfOwner(existing().userId));
+    }
+
+    function willBelongToUser() {
+      return isSignedIn() && (incoming().userId == request.auth.uid || isStaffOfOwner(incoming().userId));
+    }
+
+    // --- Users Collection ---
+    match /users/{userId} {
+      function isValidUser(data) {
+        return data.businessName is string && data.businessName.size() <= 100
+            && data.email is string && data.email.size() <= 255;
+      }
+
+      allow get: if isOwner(userId) || isStaffOfOwner(userId) || isAdmin();
+      allow list: if isAdmin();
+      allow create: if isOwner(userId) && isValidUser(incoming());
+      allow update: if (isOwner(userId) || isAdmin()) && isValidUser(incoming());
+    }
+
+    // --- Invoices Collection ---
+    match /invoices/{invoiceId} {
+      function isValidInvoice(data) {
+        return isValidId(data.userId)
+            && data.invoiceNumber is string && data.invoiceNumber.size() <= 60
+            && data.totalAmount is number && data.totalAmount >= 0;
+      }
+
+      // LIST rule must be simple to avoid O(n) get() explosions and satisfy Firestore query engine
+      allow list: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdminEmail());
+      allow get: if isSignedIn() && (resource.data.userId == request.auth.uid || isStaffOfOwner(resource.data.userId) || isAdmin());
+      allow create: if willBelongToUser() && isValidInvoice(incoming());
+      allow update: if (belongsToUser() || isAdmin()) && isValidInvoice(incoming());
+      allow delete: if belongsToUser() || isAdmin();
+    }
+
+    // --- Customers Collection ---
+    match /customers/{customerId} {
+      function isValidCustomer(data) {
+        return isValidId(data.userId)
+            && data.name is string && data.name.size() <= 100
+            && data.phone is string && data.phone.size() <= 20;
+      }
+
+      allow list: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdminEmail());
+      allow get: if isSignedIn() && (resource.data.userId == request.auth.uid || isStaffOfOwner(resource.data.userId) || isAdmin());
+      allow create: if willBelongToUser() && isValidCustomer(incoming());
+      allow update: if (belongsToUser() || isAdmin()) && isValidCustomer(incoming());
+      allow delete: if belongsToUser() || isAdmin();
+    }
+
+    // --- Products Collection ---
+    match /products/{productId} {
+      function isValidProduct(data) {
+        return isValidId(data.userId)
+            && data.name is string && data.name.size() <= 100
+            && data.price is number && data.price >= 0;
+      }
+
+      allow list: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdminEmail());
+      allow get: if isSignedIn() && (resource.data.userId == request.auth.uid || isStaffOfOwner(resource.data.userId) || isAdmin());
+      allow create: if willBelongToUser() && isValidProduct(incoming());
+      allow update: if (belongsToUser() || isAdmin()) && isValidProduct(incoming());
+      allow delete: if belongsToUser() || isAdmin();
+    }
+
+    // --- Other Collections (Generic Ownership) ---
+    match /ad_copies/{id} {
+      allow list: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdminEmail());
+      allow get: if isSignedIn() && (resource.data.userId == request.auth.uid || isStaffOfOwner(resource.data.userId) || isAdmin());
+      allow create: if isSignedIn() && (incoming().userId == request.auth.uid || isStaffOfOwner(incoming().userId));
+      allow delete: if isSignedIn() && (resource.data.userId == request.auth.uid || isStaffOfOwner(resource.data.userId));
+    }
+
+    match /logos/{id} {
+      allow list: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdminEmail());
+      allow get: if isSignedIn() && (resource.data.userId == request.auth.uid || isStaffOfOwner(resource.data.userId) || isAdmin());
+      allow create: if isSignedIn() && (incoming().userId == request.auth.uid || isStaffOfOwner(incoming().userId));
+      allow delete: if isSignedIn() && (resource.data.userId == request.auth.uid || isStaffOfOwner(resource.data.userId));
+    }
+
+    match /whatsapp_configs/{id} {
+      allow list: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdminEmail());
+      allow get: if isSignedIn() && (resource.data.userId == request.auth.uid || isStaffOfOwner(resource.data.userId) || isAdmin());
+      allow write: if isSignedIn() && (incoming().userId == request.auth.uid || isStaffOfOwner(incoming().userId));
+    }
+
+    match /staff_accounts/{id} {
+      allow get: if isSignedIn() && (id == request.auth.uid || resource.data.userId == request.auth.uid || isStaffOfOwner(resource.data.userId));
+      allow list: if isSignedIn() && (resource.data.userId == request.auth.uid || id == request.auth.uid || isAdminEmail());
+      allow create: if isSignedIn() && incoming().userId == request.auth.uid;
+      allow update: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow delete: if isSignedIn() && resource.data.userId == request.auth.uid;
+    }
+
+    match /activity_logs/{id} {
+      allow list: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdminEmail());
+      allow get: if isSignedIn() && (resource.data.userId == request.auth.uid || isStaffOfOwner(resource.data.userId) || isAdmin());
+      allow create: if isSignedIn();
+    }
+
+    match /notifications/{id} {
+      allow list: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdminEmail());
+      allow get, delete: if isSignedIn() && (resource.data.userId == request.auth.uid || isStaffOfOwner(resource.data.userId) || isAdmin());
+      allow create: if isSignedIn();
+      allow update: if isSignedIn() && (resource.data.userId == request.auth.uid || isStaffOfOwner(resource.data.userId) || isAdmin());
+    }
+
+    match /contact_requests/{id} {
+      allow read, update, delete: if isAdmin();
+      allow create: if isSignedIn();
+    }
+
+    match /plans/{id} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /plan_requests/{id} {
+      allow list: if isAdmin() || (isSignedIn() && resource.data.userId == request.auth.uid);
+      allow get: if isAdmin() || (isSignedIn() && resource.data.userId == request.auth.uid);
+      allow create: if isSignedIn() && incoming().userId == request.auth.uid;
+      allow update, delete: if isAdmin();
+    }
+
+    // Catch-all deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
