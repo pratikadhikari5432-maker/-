@@ -51,7 +51,7 @@ const db = admin.apps.length ? admin.firestore() : null;
 const app = express();
 app.use(express.json());
 
-const PORT = 3000;
+const PORT = process.env.PORT || 3000;
 const JWT_SECRET = process.env.JWT_SECRET || 'billing-platform-secret-123-change-this';
 
 // API Routes
